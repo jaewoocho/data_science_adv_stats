@@ -1,22 +1,5 @@
 # DS-5740 | Advanced Statistics for Data Scientists | Fall 2023
 
-### Instructor
-Alexander P. Christensen
-
-Assistant Professor
-
-Hobbs Hall, Room 221
-
-alexander.christensen@vanderbilt.edu
-
-Office Hours: by appointment through [Calendly](https://calendly.com/alexsciences)
-
-### Teaching Assistant 
-Danni Shi
-
-Department of Biostatistics, School of Medicine
-
-danni.shi@vanderbilt.edu
 
 ## Course Description
 Predicting future outcomes is fundamental to human activity. Understanding how past events lead to current conditions can enables us to make 
