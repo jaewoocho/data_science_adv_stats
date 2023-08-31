@@ -1,0 +1,416 @@
+---
+title: "DS5740: Week 1 | TSLM Script"
+author: "Jaewoo Cho"
+output: html_notebook
+---
+# Libraries & Data
+```{r}
+# Load {fpp3}
+library(fpp3)
+```
+
+```{r}
+# Load US Consumption Expenditure
+data("us_change")
+```
+
+# Time series Plots
+## Plot multiple variables' time series
+```{r}
+us_change %>%
+  gather("Measure", "Change", Consumption, Income, Production, Savings, Unemployment) %>%
+  ggplot(aes(x = Quarter, y = Change, colour = Measure)) +
+  geom_line() +
+  facet_grid(vars(Measure), scales = "free_y") +
+  labs(y = "") +
+  guides(colour="none")
+```
+
+## Plot pairwise correlations
+```{r}
+us_change %>%
+  as_tibble() %>%
+  select(-Quarter) %>%
+  GGally::ggpairs()
+```
+## Fit TSLM & Report fit
+```{r}
+
+fit <- us_change %>%
+  model(lm = TSLM(
+    Consumption ~ Income + Production + Unemployment + Savings
+  ))
+
+
+report(fit)
+```
+
+## Details of the report(fit)
+- Coefficients: For each of the predictors (Income, Production, Unemployment, and Savings), you'd see a coefficient. This coefficient represents the change in Consumption for a one-unit increase in the predictor, holding all other variables constant.
+- Intercept: This value gives the expected value of Consumption when all predictors are set to zero.
+- t-values and p-values: These statistics provide information about the significance of each predictor. A smaller p-value (typically less than 0.05) suggests that a predictor is statistically significant in predicting the response variable.
+- R-squared: This value gives an idea of the proportion of variance in the dependent variable that's explained by the independent variables. It ranges from 0 to 1, with higher values indicating a better fit.
+- Residual standard error: This metric provides a measure of the average amount that the predictions deviate from the actual observations.
+- F-statistic and its associated p-value: This checks the overall significance of the model. A significant F-statistic (small p-value) suggests that at least one of the predictors is useful in predicting the response variable.
+- Remember, while statistical significance is useful, it doesn't always translate to practical significance. Also, fitting a model is only the beginning. Checking assumptions of linear regression (like normality of residuals, homoscedasticity, etc.), as well as the potential for multicollinearity among predictors, is crucial for ensuring the validity and reliability of the model's results.
+
+## Explaination of the results
+
+### Series and Model
+- Series: This represents the dependent variable, which is Consumption in this case.
+- Model: Specifies the type of model used, which is TSLM.
+
+### Residuals
+- This section describes the distribution of the residuals (differences between observed and predicted values):
+- Min and Max: The minimum and maximum residual values.
+- 1Q and 3Q: The first (25th percentile) and third quartiles (75th percentile) of the residuals.
+- Median: The median residual value, which provides a central tendency measure of the residuals.
+
+### Coefficients
+- This is the core part of the output, detailing the regression coefficients and their significance:
+
+- (Intercept): The expected value of Consumption when all predictors are zero.
+- Income, Production, Unemployment, and Savings: These are the estimated coefficients for each predictor. For instance, for every one-unit increase in Income, the Consumption is expected to increase by approximately 0.740583 units, holding all other variables constant.
+- Std. Error: Standard error for each coefficient.
+- t value: The t-statistic value for each coefficient.
+- Pr(>|t|): The p-value associated with each coefficient's t-value.
+- The asterisks and dots next to the p-values indicate their significance:
+
+- ***: Highly significant (p-value < 0.001)
+- **: Very significant (p-value < 0.01)
+- *: Significant (p-value < 0.05)
+- .: Marginally significant (p-value < 0.1)
+
+### Additional metrics
+- Residual standard error: This value, 0.3102, represents the average deviation of observations from the fitted line. There are 193 degrees of freedom, suggesting there were 198 data points (193 + 4 + 1 = 198, with 4 being the number of predictors and 1 for the intercept).
+- Multiple R-squared: Indicates that approximately 76.83% of the variability in Consumption is explained by the model.
+- Adjusted R-squared: A modified version of R-squared, taking into account the number of predictors. It's slightly less than R-squared at 76.35%, suggesting that all predictors contribute meaningfully to the model.
+- F-statistic: The overall significance test of the model, testing if at least one predictor is useful in predicting the response variable. A very high F-statistic of 160 and a very low p-value indicate the model is statistically significant.
+
+### Interpretation:
+- Income and Savings have the most significant impact on Consumption, given their very low p-values (< 2e-16) and relatively high t-values.
+- Production has a significant impact on Consumption at the 0.05 level.
+- Unemployment is marginally significant, implying that while it may have an effect on Consumption, it's less robustly established compared to other predictors in this model.
+- The adjusted R-squared suggests a good fit, with over 76% of the variation in Consumption explained by the model.
+
+```{r}
+# Length of time series
+ts_length <- nrow(us_change)
+
+# Remove last five years (we'll make a prediction later) 
+us_prediction <- us_change[
+  -c((ts_length - 19):ts_length), # remove last 5 years
+]
+
+# Save last five years (we'll compare with prediction)
+us_actual <- us_change[
+  c((ts_length - 19):ts_length), # keeps last 5 years
+]
+
+fit_us_lm <- us_prediction %>%
+  model(lm = TSLM(
+    Consumption ~ Income + Production + Unemployment + Savings
+  ))
+
+# Report fit
+report_fit <- report(fit_us_lm)
+
+```
+
+```{r}
+# Plot model
+augment(fit_us_lm) %>%
+  # Plot quarter on x-axis
+  ggplot(aes(x = Quarter)) +
+  # Plot actual values
+  geom_line(aes(y = Consumption, colour = "Data")) +
+  # Plot fit values
+  geom_line(aes(y = .fitted, colour = "Fitted")) +
+  labs(
+    # No y-axis label
+    y = NULL, 
+    # Change title
+    title = "Percent change in US consumption expenditure"
+  ) +
+  # Change colors
+  scale_colour_manual(
+    values = c(
+      Data = "black", # Make data line black
+      Fitted = "orange" # Make fitted line orange
+    )
+  ) +
+  # No title for legend
+  guides(colour = guide_legend(title = NULL))
+
+```
+
+
+```{r}
+# Forecast
+fc <- forecast(fit_us_lm, new_data = us_actual)
+
+# Plot forecast
+us_change %>%
+  # Plot quarter on x-axis
+  ggplot(aes(x = Quarter)) +
+  # Plot actual values
+  geom_line(aes(y = Consumption, colour = "Data")) +
+  # Plot predicted values
+  geom_line(
+    data = fc,
+    aes(y = .mean, colour = "Fitted"),
+    size = 1
+  ) +
+  labs(
+    # No y-axis label
+    y = NULL, 
+    # Change title
+    title = "Percent change in US consumption expenditure"
+  ) +
+  # Change colors
+  scale_colour_manual(
+    values = c(
+      Data = "black", # Make data line black
+      Fitted = "orange" # Make forecasted line orange
+    )
+  ) +
+  # No title for legend
+  guides(colour = guide_legend(title = NULL))
+
+```
+
+```{r}
+# Assuming you have forecast and actual values
+predicted_values <- fc$.mean
+actual_values <- us_actual$Consumption
+
+# R-squared
+residuals <- actual_values - predicted_values
+ss_res <- sum(residuals^2)
+ss_tot <- sum((actual_values - mean(actual_values))^2)
+r_squared <- 1 - (ss_res / ss_tot)
+print(paste("R-squared:", round(r_squared, 3)))
+
+# MAE
+mae <- mean(abs(residuals))
+print(paste("MAE:", round(mae, 3)))
+
+# RMSE
+rmse <- sqrt(mean(residuals^2))
+print(paste("RMSE:", round(rmse, 3)))
+
+# MBE
+mbe <- mean(residuals)
+print(paste("MBE:", round(mbe, 3)))
+
+```
+# Explaination for above
+## R-squared
+- The R-squared, also known as the coefficient of determination, represents the proportion of the variance in the dependent variable that is predictable from the independent variable(s). It gives an indication of the goodness of fit of a model. It ranges from 0 to 1, where:
+- 0 indicates that the model explains none of the variability of the response data around its mean.
+- 1 indicates that the model explains all the variability of the response data around its mean.
+
+## MAE (Mean Absolute Error)
+- MAE measures the average of the absolute differences between predictions and actual values. 
+-It gives an idea of how wrong the predictions were. 
+- In the code: mae: This calculates the mean of the absolute residuals. The absolute value is used to ensure all errors are positive before taking the average.
+
+## RMSE (Root Mean Square Error)
+- RMSE is a quadratic scoring rule that measures the average magnitude of the error. It gives the standard deviation of the residuals and provides a measure of how spread out these residuals are.
+
+- In the code -> rmse: It computes the root of the mean of the squared residuals. This provides a more penalized error measure than MAE, as larger errors have exponentially greater impact.
+
+## MBE (Mean Bias Error)
+- MBE measures the average bias in the predictions. 
+- If the MBE is positive, this means on average, the predictions are higher than the actual values. 
+- If negative, the predictions are, on average, lower than the actual values.
+- mbe: This calculates the mean of the residuals, without taking the absolute values. This can indicate if the model is consistently over-predicting or under-predicting the actual values.
+
+```{r}
+# General function for many measures
+accuracy(fc, us_change)
+
+# Check residuals
+gg_tsresiduals(fit_us_lm)
+```
+
+```{r}
+# Future scenarios
+future_scenarios <- scenarios( # Create future scenarios
+  increase_income = new_data( # Create new data
+    us_prediction,  # Original data
+    nrow(us_actual) # Number of new data
+  ) %>%
+    mutate(
+      Income = mean(us_prediction$Income) + # Add to mean Income
+        seq(0, 1, length = nrow(us_actual)), # Increase from 0 to 1
+      # with a length equal to the number of actual data
+      Production = mean(us_prediction$Production) + 
+        rep(0, nrow(us_actual)), # No increase/decrease
+      # Repeat 0 with a length equal to the number of actual data
+      Savings = mean(us_prediction$Savings) + 
+        rep(0, nrow(us_actual)),
+      Unemployment = mean(us_prediction$Unemployment) +
+        rep(0, nrow(us_actual))
+    ),
+  decrease_income = new_data(
+    us_prediction, nrow(us_actual)
+  ) %>%
+    mutate(
+      Income = mean(us_prediction$Income) + 
+        seq(0, -1, length = nrow(us_actual)),
+      Production = mean(us_prediction$Production) + 
+        rep(0, nrow(us_actual)),
+      Savings = mean(us_prediction$Savings) + 
+        rep(0, nrow(us_actual)),
+      Unemployment = mean(us_prediction$Unemployment) +
+        rep(0, nrow(us_actual))
+    )
+)
+# Forecast
+fc_us <- fit_us_lm %>% 
+  forecast(new_data = future_scenarios)
+
+# Plot
+autoplot(us_prediction, Consumption) +
+  autolayer(fc_us)
+```
+
+```{r}
+# Fit linear model with trend
+fit_us_trend <- us_prediction %>%
+  model(tslm = TSLM(Consumption ~ trend()))
+
+# Report fit
+report_fit_trend <- report(fit_us_trend)
+```
+## The model presented is a Time Series Linear Model (TSLM) for the "Consumption" series. Let's break down the components of the output to assess its goodness of fit:
+
+## Residuals:
+
+- Residuals are the differences between the observed and predicted values. Ideally, they should be randomly scattered around zero, showing no patterns.
+The median value is 0.0366, which is close to 0, indicating that the model's predictions are close to the actual values in the center of the distribution.
+The interquartile range (from the 1Q to the 3Q) is from -0.3403 to 0.3867. This suggests that 50% of residuals lie in this range, which seems reasonable.
+However, the minimum and maximum values show that there might be some outliers in the data or some patterns that the model didn’t capture well.
+
+## Coefficients:
+
+- The intercept is significant (p-value < 2e-16), indicating that the model's baseline prediction (when the time is 0) is different from 0.
+The trend() coefficient is negative and significant (p-value = 0.0227). This means there's a statistically significant negative trend in the Consumption series over time. However, the magnitude of this trend is quite small at -0.0022103.
+
+## Residual Standard Error (RSE):
+
+- The RSE is 0.6593. It measures the typical size of the residuals. The smaller the RSE, the better the model's fit to the data. In the context of the Consumption series, whether this is good or bad depends on the scale of the Consumption values. If they are generally small, then an RSE of 0.6593 might be relatively large, indicating poor fit.
+
+## R-squared and Adjusted R-squared:
+
+- The Multiple R-squared value is 0.02913, suggesting that only about 2.913% of the variation in Consumption is explained by the time trend. This is quite low.
+The Adjusted R-squared, which penalizes the model for the number of predictors relative to the number of observations, is 0.02362, which is also very low.
+
+## F-statistic:
+
+- The F-statistic tests the overall significance of the model. In this case, the p-value is 0.022733, which is less than 0.05, indicating that the model with the trend predictor is a better fit than a model with no predictors.
+
+## In summary:
+
+- The model captures a statistically significant negative trend in the Consumption series over time, but this trend is small in magnitude.
+The low R-squared values indicate that the linear model with just a time trend does not capture much of the variability in the Consumption series.
+The residuals suggest there might be some patterns or outliers that the model hasn’t captured well.
+- Given the above information, while the model captures a slight negative trend, it's not a particularly good model for the Consumption series as it explains only a small portion of the variance. Depending on the purpose of the analysis, you might want to consider more complex models or additional predictor variables to better capture the underlying patterns in the data.
+
+```{r}
+# Plot model
+augment(fit_us_trend) %>%
+  # Plot quarter on x-axis
+  ggplot(aes(x = Quarter)) +
+  # Plot actual values
+  geom_line(aes(y = Consumption)) +
+  labs(
+    # No y-axis label
+    y = NULL, 
+    # Change title
+    title = "Percent change in US consumption expenditure"
+  ) +
+  # No title for legend
+  guides(colour = guide_legend(title = NULL))
+
+
+# Fit linear model with trend and season
+fit_us_season <- us_prediction %>%
+  model( # model for time series
+    tslm = TSLM( # time series linear model
+      Consumption ~ trend() + # trend component
+        season() # season component
+    )
+  )
+
+# Report fit for model with trend and season
+report_fit_season <- report(fit_us_season)
+
+# Plot model with trend and season
+augment(fit_us_season$tslm) %>% # Extracts data from the model
+  ggplot(aes(x = Quarter)) +
+  # Plot actual values
+  geom_line(aes(y = Consumption, color = "Actual")) +
+  # Plot fitted values from the model
+  geom_line(aes(y = .fitted, color = "Fitted")) +
+  labs(
+    y = NULL, # No y-axis label
+    title = "Percent change in US consumption expenditure with Trend and Season",
+    color = "Legend"
+  ) +
+  scale_color_manual(values = c("Actual" = "black", "Fitted" = "orange")) +
+  theme_minimal()
+```
+
+```{r}
+# Australian beer example
+data("aus_production")
+
+# Australian beer production
+recent_production <- aus_production %>% 
+  filter(year(Quarter) >= 1992)
+
+# Plot
+recent_production %>% 
+  autoplot(Beer) +
+  labs(y = "Megalitres", title = "Australian quarterly beer production")
+
+# Fit model with trend and season
+fit_beer <- recent_production %>%
+  model(tslm = TSLM(Beer ~ trend() + season()))
+
+# Report fit
+report_fit_beer <- report(fit_beer)
+
+# Plot residuals
+fit_beer %>%
+  gg_tsresiduals()
+
+# Plot fitted model
+augment(fit_beer) %>%
+  ggplot(aes(x = Quarter)) +
+  geom_line(aes(y = Beer, colour = "Data")) +
+  geom_line(aes(y = .fitted, colour = "Fitted")) +
+  labs(y="Megalitres",title ="Australian quarterly beer production") +
+  scale_colour_manual(values = c(Data = "black", Fitted = "#D55E00"))
+
+```
+
+```{r}
+# Examining seasonality
+augment(fit_beer) %>%
+  ggplot(aes(x=Beer, y=.fitted, colour=factor(quarter(Quarter)))) +
+  geom_point() +
+  labs(y="Fitted", x="Actual values", title = "Quarterly beer production") +
+  scale_colour_brewer(palette="Dark2", name="Quarter") +
+  geom_abline(intercept=0, slope=1)
+
+
+# Forecasting prediction
+fc <- fit_beer %>% forecast
+
+# Plot forecast
+fc %>% autoplot(recent_production)
+```
+
