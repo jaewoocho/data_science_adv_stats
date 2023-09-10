@@ -1,0 +1,70 @@
+---
+title: "DS5740: Week 2 | #### DS5740: Week 2 | TSLM & Decomposition Script ####"
+author: "Jaewoo Cho"
+output: html_notebook
+---
+# Libraries & Data
+
+```{r}
+# Load {fpp2} and {fpp3}
+library(fpp2); library(fpp3)
+
+# Set seed for reproducibility
+set.seed(1234)
+```
+
+```{r}
+# Random noise
+y_wn <- tsibble(sample = 1:50, wn = rnorm(50, 0, 1), index = sample)
+
+# Plot
+y_wn %>% autoplot(wn) + labs(x = "", y = "")
+
+# Random noise
+y_wn %>% ACF(wn) %>% autoplot()
+
+```
+
+```{r}
+
+# Random noise
+round(t(head(y_wn)), 3)
+
+# Make y_wn a matrix
+new_y_wn <- as.matrix(y_wn)
+
+# Make with lag = 1 and lag = 2
+new_y_wn <- cbind(
+  new_y_wn, c(NA, new_y_wn[1:(length(new_y_wn[,2]) - 1),2]),
+  c(NA, NA, new_y_wn[1:(length(new_y_wn[,2]) - 2),2])
+)
+
+# Change column names
+colnames(new_y_wn) <- c("sample", "wn", "wn_lag1", "wn_lag2")
+
+# Set values
+wn <- new_y_wn[,"wn"]
+wn_lag1 <- new_y_wn[,"wn_lag1"]
+wn_lag2 <- new_y_wn[,"wn_lag2"]
+
+# Random noise
+round(t(head(new_y_wn)), 3)
+
+# Lag-1 correlation
+sum(
+  (wn - mean(wn)) *
+    (wn_lag1 - mean(wn)),
+  na.rm = TRUE
+) / sum((wn - mean(wn))^2)
+
+# Lag-2 correlation
+sum(
+  (wn - mean(wn)) *
+    (wn_lag2 - mean(wn)),
+  na.rm = TRUE
+) / sum((wn - mean(wn))^2)
+
+# `acf` from {tseries}
+acf(wn, lag.max = 2, plot = FALSE)
+```
+
