@@ -1,0 +1,435 @@
+---
+title: "Assignment 3"
+author: "Jaewoo Cho"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, cache = TRUE)
+library(fpp3)
+library(tsibble)
+```
+
+## FPP3 8.8 Exercises: 5(a-e)
+
+## Fit and Forecast Methane Data using ETS
+
+### 5.
+
+Data set `global_economy` contains the annual Exports from many countries. Select one country to analyze.
+
+### a. Plot the Exports series and discuss the main features of the data.
+
+```{r, message = FALSE, warning = FALSE, comment = NA, echo = TRUE, eval = TRUE}
+global <- global_economy
+# Subset data for the United States
+us_data <- global_economy[global_economy$Country == "United States", ]
+us_data <- na.omit(us_data)
+us_data <- us_data %>% select(Year, GDP)
+plot(us_data$Year, us_data$GDP, type = "l", xlab = "Year", ylab = "GDP", main = "GDP Time Series")
+
+```
+> Main features of the data
+- The data consists of annual data of Years, GDP, population, and Country that explains the exports of the global economy with trends.
+> Discuss features of the time series
+- Seasonality: Many time series data exhibit seasonality, which refers to recurring patterns or cycles at fixed intervals. For example, retail sales often exhibit yearly seasonality with peaks during the holiday season.
+- Trends: Time series data may show long-term trends, which represent gradual and sustained changes in the data over time. Trends can be upward (increasing) or downward (decreasing).
+- Cyclic Patterns: Cyclic patterns are different from seasonality in that they represent periodic fluctuations that are not tied to specific calendar intervals. Cycles can be longer or shorter than a year and may not have a fixed duration.
+
+### b. Use an ETS(A,N,N) model to forecast the series, and plot the forecasts.
+
+```{r, message = FALSE, warning = FALSE, comment = NA, echo = TRUE, eval = TRUE}
+# Convert us_data to tsibble
+us_data <- us_data %>% as_tsibble(index = Year)
+
+# Fit an ETS(A,N,N) model to the data
+us_fit <- us_data %>% model(ETS(GDP ~ error("A") + trend("N") + season("N")))
+
+# Forecast future values
+us_forecast <- us_fit %>%
+  forecast(h = 12)  # Change the forecast horizon as needed
+
+# Plot the forecasts
+autoplot(us_forecast) +
+  labs(
+    y = "GDP Forecast",
+    x = "Year",
+    title = "Forecasted GDP using ETS(A,N,N)"
+  )
+```
+
+```{r}
+us_data_ts <- as_tsibble(us_data, index = Year)
+# Plot time series
+us_data_ts %>% autoplot(GDP) +labs(y = "GDP",x = "Year")
+
+# Estimate parameters
+fit <- us_data_ts %>% model(ANN = ETS(GDP ~ error("A") + trend("N") + season("N")))
+
+# Report fit
+report(fit)
+
+# Plot components
+components(fit) %>% autoplot()
+
+# Plot residuals
+fit %>% gg_tsresiduals()
+
+# Estimate parameters
+fit <- us_data_ts %>%
+  model(
+    ANN = ETS(GDP ~ error("A") + trend("N") + season("N")),
+    AAN = ETS(GDP ~ error("A") + trend("A") + season("N")),
+    AAdN = ETS(GDP ~ error("A") + trend("Ad") + season("N")),
+    AAA = ETS(GDP ~ error("A") + trend("A") + season("A")),
+    AAdA = ETS(GDP ~ error("A") + trend("Ad") + season("A"))
+  )
+# Report fit
+report(fit)
+
+```
+```{r}
+# The data vector
+data <- c(5.633e+11, 6.051e+11, 6.386e+11, 6.858e+11, 7.437e+11, 8.150e+11, 8.617e+11, 9.425e+11,
+            1.0199e+12, 1.075884e+12, 1.16777e+12, 1.282449e+12, 1.428549e+12, 1.548825e+12, 1.688923e+12, 1.877587e+12,
+            2.085951e+12, 2.356571e+12, 2.632143e+12, 2.862505e+12, 3.210956e+12, 3.344991e+12, 3.638137e+12, 4.040693e+12,
+            4.346734e+12, 4.590155e+12, 4.870217e+12, 5.252629e+12, 5.657693e+12, 5.979589e+12, 6.174043e+12, 6.539299e+12,
+            6.878718e+12, 7.308755e+12, 7.664060e+12, 8.100201e+12, 8.608515e+12, 9.089168e+12, 9.660624e+12, 1.028478e+13,
+            1.062182e+13, 1.097751e+13, 1.151067e+13, 1.227493e+13, 1.309373e+13, 1.385589e+13, 1.447764e+13, 1.471858e+13,
+            1.441874e+13, 1.496437e+13, 1.551793e+13, 1.615526e+13, 1.669152e+13, 1.742761e+13, 1.812071e+13, 1.862448e+13)
+
+# Creating the ts object
+us_data_ts_tsts <- ts(data, start=1961, frequency=1)
+```
+
+
+```{r}
+library(forecast)
+ets_model <- ets(us_data_ts_tsts, model = "ANN")
+forecasted_values <- forecast(ets_model, h = 10)
+plot(forecasted_values)
+
+```
+
+
+
+### c. Compute the RMSE values for the training data.
+
+```{r, message = FALSE, warning = FALSE, comment = NA, echo = TRUE, eval = TRUE}
+training_data <- window(us_data_ts_tsts, end = c(2010, 1))
+fitted_values <- fitted(ets_model)
+rmse <- sqrt(mean((training_data - fitted_values)^2))
+rmse
+
+```
+
+### d. Compare the results to those from an ETS(A,A,N) model. (Remember that the trended model is using one more parameter than the simpler model.) Discuss the merits of the two forecasting methods for this data set.
+
+```{r, message = FALSE, warning = FALSE, comment = NA, echo = TRUE, eval = TRUE}
+ets_aa_model <- ets(us_data_ts_tsts, model = "AAN")
+fitted_values_aa <- fitted(ets_aa_model)
+rmse_aa <- sqrt(mean((training_data - fitted_values_aa)^2))
+rmse_aa
+```
+
+> Discuss which model has better fit and whether the more complex model is necessary 
+- Lower RMSE values indicate better model fit because they represent smaller prediction errors. In this case:
+- The training data had a RSME with 365452825303 and the ETS(A,A,N) model had a RSME of 167530087609 that shows the ETS(A,A,N) mode had a lower and better RSME score.
+- The RMSE for ETS(A,A,N) is significantly larger than the RMSE for ETS(A,N,N). This suggests that the ETS(A,N,N) model provides a better fit to the training data.
+- The ETS(A,N,N) model appears to be simpler (with fewer parameters) than the ETS(A,A,N) model and yet performs better in terms of RMSE.
+
+### e. Compare the forecasts from both methods. Which do you think is best?
+
+```{r, message = FALSE, warning = FALSE, comment = NA, echo = TRUE, eval = TRUE}
+plot(forecast(ets_aa_model, h = 10), col = "blue", main = "Comparison of Forecasts")
+plot(forecasted_values, col = "red")
+```
+
+> Discuss which model you think is best with a brief explanation of why
+> I think the ETS AAN model has the best performance based on the RSME scores and the overall trending patterns in the predictions as shown in the plots from above.
+- The RMSE for ETS(A,A,N) is significantly larger than the RMSE for ETS(A,N,N). This suggests that the ETS(A,N,N) model provides a better fit to the training data.
+- The ETS(A,N,N) model appears to be simpler (with fewer parameters) than the ETS(A,A,N) model and yet performs better in terms of RMSE.
+
+### Fit `ETS` so it finds the best fitting model (get fit statistics the fit)
+
+```{r, message = FALSE, warning = FALSE, comment = NA, echo = TRUE, eval = TRUE}
+best_ets_model <- ets(us_data_ts_tsts)
+summary(best_ets_model)
+```
+
+### Use the best fitting model to forecast 10 time points out
+
+```{r, message = FALSE, warning = FALSE, comment = NA, echo = TRUE, eval = TRUE}
+forecasted_values_best <- forecast(best_ets_model, h = 10)
+print(forecasted_values_best)
+```
+
+### `report` the model and interpret each smoothing parameter
+
+```{r, message = FALSE, warning = FALSE, comment = NA, echo = TRUE, eval = TRUE}
+best_ets_model
+```
+
+> Interpret the parameters
+> - Alpha (a): Alpha is the smoothing parameter for the level (l) component. In this model, alpha is estimated to be approximately 0.9999. A value close to 1 suggests that the model relies heavily on recent observations to estimate the current level.
+- Beta (b): Beta is the smoothing parameter for the trend (b) component. In this model, beta is estimated to be approximately 0.5825. It indicates how much weight is given to the most recent trend when forecasting future values. A value less than 1 suggests that past trends have some influence on the current trend.
+- Initial States:
+  - Initial Level (l): The estimated initial level is approximately 473,969,866,667.206. It represents the starting point for the level component in the model.
+  - Initial Trend (b): The estimated initial trend is approximately 72,035,905,115.0473. It represents the starting point for the trend component in the model.
+- Sigma (o): Sigma is the estimate of the error standard deviation, and in this model, it's approximately 0.0236. It measures the variability or volatility of the residuals (errors) in the model.
+- AIC (Akaike Information Criterion): The AIC value is 3069.118. A lower AIC value suggests that the model fits the data better. It's a measure of model goodness of fit that takes into account model complexity.
+- AICc (Corrected Akaike Information Criterion): The AICc value is 3070.318. Similar to AIC, but it corrects for small sample sizes.
+- BIC (Bayesian Information Criterion): The BIC value is 3079.245. Like AIC, it measures model fit while penalizing model complexity. Smaller BIC values indicate better-fitting models.
+- In summary, this ETS(M,A,N) model has estimated smoothing parameters for level and trend, initial states for level and trend, and a measure of the error standard deviation. The AIC, AICc, and BIC values provide information about the goodness of fit and model complexity. You would typically choose the model with the lowest AIC, AICc, or BIC value, as it indicates the best trade-off between model fit and complexity.
+
+### Fit and Forecast Methane Data using ETS
+#### Find and obtain the \textbf{globally averaged marine surface} methane ($\text{CH}_4$) data
+#### Hint: You'll have to copy and paste the data into a .csv and then load
+#### the data into R
+
+Here's the website where the data can be found: https://gml.noaa.gov/ccgg/
+
+### Prepare Data
+
+```{r, message = FALSE, warning = FALSE, comment = NA, echo = TRUE, eval = TRUE}
+library(readr)
+library(ggplot2)
+library(zoo)
+library(fabletools)
+library(distributional)
+methane_data <- read_csv("~/Desktop/data/methane_data.csv")
+methane_data
+```
+
+### Set Prediction and Actual Data
+
++ Create an object called `prediction_methane` with the dates from July 1983-July 2017
+
++ Create a separate object called `actual_methane` with the dates from August 2017-April 2022
+
+```{r, message = FALSE, warning = FALSE, comment = NA, echo = TRUE, eval = TRUE}
+# Convert year and month columns to a Date object
+methane_data$Date <- as.Date(paste(methane_data$year, methane_data$month, 1, sep = "-"))
+
+# Define the start and end dates for prediction_methane and actual_methane
+start_date_pred <- as.Date("1983-07-01")
+end_date_pred <- as.Date("2017-07-01")
+
+start_date_actual <- as.Date("2017-08-01")
+end_date_actual <- as.Date("2022-04-01")
+
+# Create the 'prediction_methane' object by filtering the data
+prediction_methane <- methane_data[methane_data$Date >= start_date_pred & methane_data$Date <= end_date_pred, ]
+
+# Create the 'actual_methane' object by filtering the data
+actual_methane <- methane_data[methane_data$Date >= start_date_actual & methane_data$Date <= end_date_actual, ]
+
+prediction_methane
+actual_methane
+
+
+```
+
+### Plot the Time Series for `prediction_methane`
+#### (make sure you label your axes properly)
+
+```{r, message = FALSE, warning = FALSE, comment = NA, echo = TRUE, eval = TRUE}
+# Create a time series plot for prediction_methane
+ggplot(data = prediction_methane, aes(x = Date, y = average)) +
+  geom_line() +
+  labs(
+    title = "Time Series of Methane Data (July 1983 - July 2017)",
+    x = "Date",
+    y = "Average Methane Value"
+  ) +
+  theme_minimal()
+```
+
+### Fit Best ETS Model and Report Fit for `prediction_methane`
+#### Comment on the smoothing parameters for the model
+#### Discuss what the magnitude of these parameters mean
+#### Include the type of model
+
+```{r, message = FALSE, warning = FALSE, comment = NA, echo = TRUE, eval = TRUE}
+# Load the forecast library
+library(forecast)
+
+# Convert 'Date' to a time series object
+prediction_methane_ts <- ts(prediction_methane$average, frequency = 12)
+
+# Fit the best ETS model
+best_ets_model <- ets(prediction_methane_ts)
+
+# Print the best ETS model
+summary(best_ets_model)
+```
+
+> Discuss what the magnitude of the smoothing parameters mean and what this says about the time series
+- Model Type: ETS(A, A, A)
+- Alpha (a): The alpha parameter controls the level smoothing and represents the weight given to the most recent observation when updating the estimated level. A high a (close to 1. 0.9999) indicates that the model is giving a very high weight to the most recent observation when updating the estimated level, making the forecast highly responsive to recent changes.
+- Beta (b): The beta parameter controls the trend smoothing and represents the weight given to the most recent estimated trend when updating the trend component. b is relatively low at 0.04, suggesting that the trend component is updated with less weight on the most recent trend estimate.
+- Gamma (y): The gamma parameter is applicable only for models with seasonality (e.g., ETS(A, A, M)). It controls the seasonality smoothing and represents the weight given to the most recent estimated seasonal component when updating the seasonal component. y is very low at 0.0001, indicating that the seasonal component is updated with very little weight on the most recent seasonal estimate, suggesting minimal seasonality in the data.
+- Sigma represents the estimated standard deviation of the error term, which is 1.1728 in this case. It indicates the variability or volatility of the residuals around the predicted values.
+- AIC (Akaike Information Criterion): 2607.659
+- AICc (Corrected AIC): 2609.224
+- BIC (Bayesian Information Criterion): 2675.892
+- These information criteria can be used for model selection. Lower values of these criteria generally indicate a better-fitting model.
+- ME (Mean Error): -0.02842914
+- RMSE (Root Mean Squared Error): 1.149612
+- MAE (Mean Absolute Error): 0.8786213
+- MPE (Mean Percentage Error): -0.001700486
+- MAPE (Mean Absolute Percentage Error): 0.05029763
+- MASE (Mean Absolute Scaled Error): 0.1283863
+- ACF1 (First Autocorrelation): 0.2780759
+- These error measures assess the performance of the model on the training data. The RMSE, MAE, MAPE, and MASE are commonly used metrics to evaluate the accuracy of time series forecasts.
+- In summary, the ETS(A, A, A) model suggests that the time series has an additive error, trend, and seasonal component. The high a value indicates strong responsiveness to recent data for level smoothing, while the low b and y values suggest less responsiveness for trend and seasonality. The model's accuracy can be further assessed using out-of-sample data or cross-validation.
+
+```{r}
+# Creating the sample data
+data <- c(1844.6, 1852.8, 1858.1, 1858.7, 1856.7, 1854.5, 1854.9, 1856.8, 1856.7, 1854.8, 1852.0, 1849.1,
+          1851.9, 1860.4, 1865.8, 1866.2, 1866.0, 1865.0, 1865.0, 1866.2, 1865.3, 1861.9, 1858.8, 1858.5,
+          1863.0, 1870.7, 1875.4, 1875.6, 1874.7, 1873.2, 1872.7, 1874.8, 1875.9, 1874.3, 1871.9, 1871.5,
+          1876.5, 1884.7, 1890.1, 1891.9, 1891.8, 1889.5, 1887.6, 1888.7, 1891.2, 1891.6, 1888.5, 1886.4,
+          1892.6, 1902.6, 1908.0, 1909.5, 1909.3, 1908.3, 1908.1, 1909.3, 1909.9)
+
+# Converting to time series with index starting from 31
+actual_methane_ts_sub <- ts(data, start=35, frequency=12)
+```
+
+### Using the best fitting model, make and plot a forecast to April 2022 using `prediction_methane`#
+#### Plot the line for `actual_methane` \textbf{over} the forecast using the color `"#D55E00"`#
+
+
+```{r, message = FALSE, warning = FALSE, comment = NA, echo = TRUE, eval = TRUE}
+
+# Convert 'Date' to a time series object for 'prediction_methane' and 'actual_methane'
+prediction_methane_ts <- ts(prediction_methane$average, frequency = 12)
+actual_methane_ts <- ts(actual_methane$average, frequency = 12)
+
+# Fit the best ETS(A, A, A) model
+best_ets_model <- ets(prediction_methane_ts)
+
+# Forecast to April 2022
+forecast_length <- 12  # Forecast for 12 months (April 2022)
+forecast_prediction <- forecast(best_ets_model, h = forecast_length)
+
+
+# Plot the forecast
+plot(forecast_prediction, 
+     ylim = c(1600, 2000),
+     xlab = "Date",
+     ylab = "Methane Value",
+     main = "Methane Forecast (July 1983 - April 2022)")
+
+# Add the line for 'actual_methane' in the specified color
+lines(actual_methane_ts_sub, col = "#D55E00")
+
+```
+
+
+### Compute point accuracy measures between the forecasted and actual values
+#### Discuss whether the forecast was accurate and whether there was any bias in the forecast
+
+```{r, message = FALSE, warning = FALSE, comment = NA, echo = TRUE, eval = TRUE}
+# Calculate errors
+errors <- prediction_methane_ts - actual_methane_ts_sub
+
+# Compute MAE
+MAE <- mean(abs(errors))
+
+# Compute MAPE
+MAPE <- mean(abs(errors/actual_methane_ts_sub)) * 100
+
+# Compute MSE
+MSE <- mean(errors^2)
+
+# Compute RMSE
+RMSE <- sqrt(MSE)
+
+# Compute Bias
+Bias <- mean(errors)
+
+cat("MAE:", MAE, "\n")
+cat("MAPE:", MAPE, "%\n")
+cat("MSE:", MSE, "\n")
+cat("RMSE:", RMSE, "\n")
+cat("Bias:", Bias, "\n")
+
+```
+
+> Discuss whether the forecast was accurate and whether there was any bias in the forecast
+- MAE (Mean Absolute Error): 4.2
+  - The MAE is 4.2, which means that on average, the forecasted values are off by 4.2 units from the actual values. This provides a measure of the magnitude of the forecast errors, but doesn't indicate direction (e.g. whether the forecasted values were typically higher or lower than the actual values). But I think this is a really close prediction.
+- MAPE (Mean Absolute Percentage Error): 0.2276916%
+  - The MAPE is approximately 0.23%. This indicates that the forecasted values are, on average, within 0.23% of the actual values. This is a very low percentage error, suggesting that the forecast is quite accurate in relative terms, which I think did really well. 
+- MSE (Mean Squared Error): 17.64
+  - The MSE measures the average squared difference between the forecasted and actual values. A higher MSE indicates larger average squared errors. In isolation, the MSE might not be as intuitive as some of the other metrics. It's particularly sensitive to outliers, meaning a single large error can heavily influence its value.
+- RMSE (Root Mean Squared Error): 4.2
+  - The RMSE is the square root of the MSE, giving a measure of the average magnitude of errors in the same units as the original data. It's notable that the RMSE is equal to the MAE in this case, which suggests that the errors are fairly consistent; large errors aren't skewing the results significantly.
+- Bias: -4.2
+  - The bias is -4.2, which means that on average, the forecasted values are 4.2 units lower than the actual values. A negative bias indicates a systematic underestimation in the forecasts. This consistent underestimation could be a point of focus for refining the forecasting model or approach.
+- The forecast appears to be quite accurate based on the MAPE of 0.23%, meaning the relative error is very low.However, there's a consistent underestimation in the forecasts, as indicated by the bias of -4.2. This systematic bias suggests that there might be a structural issue or trend that the forecasting model isn't fully capturing.Both MAE and RMSE being 4.2 (and equal to each other) indicate that there aren't sporadic large errors greatly influencing the forecast accuracy metrics. Errors seem to be fairly consistent. In summary, while the forecast seems accurate in relative terms, there's a clear indication of consistent underestimation. 
+
+### Compute and compare distribution accuracy measures between the forecasted and actual values
+#### Estimate the best fit model and compare with the ETS(A,A,N) model
+#### Compute forecasts for both models
+#### Compute `winkler_score` and `CRPS`
+#### Discuss which model had the better forecast and whether the additive seasonal component was necessary
+
+```{r, message = FALSE, warning = FALSE, comment = NA, echo = TRUE, eval = TRUE}
+library(forecast)
+library(fabletools)
+library(distributional)
+library(scoringRules)
+
+best_fit <- ets(prediction_methane_ts)
+ets_AAN <- ets(prediction_methane_ts, model="AAN")
+
+forecast_best_fit <- forecast(best_fit)
+forecast_AAN <- forecast(ets_AAN)
+
+# Calculate standard deviations
+sd_best_fit <- (forecast_best_fit$upper[,1] - forecast_best_fit$mean) / qnorm(0.975)
+sd_AAN <- (forecast_AAN$upper[,1] - forecast_AAN$mean) / qnorm(0.975)
+
+# Constructing the approximate distribution for best_fit
+dist_best_fit <- dist_normal(mean = forecast_best_fit$mean, sd = sd_best_fit)
+
+# Constructing the approximate distribution for ets_AAN
+dist_AAN <- dist_normal(mean = forecast_AAN$mean, sd = sd_AAN)
+
+# Now, using the constructed distributions with winkler_score
+winkler_best_fit <- winkler_score(dist_best_fit, actual_methane_ts_sub)
+winkler_AAN <- winkler_score(dist_AAN, actual_methane_ts_sub)
+
+# Compute CRPS
+crps_best_fit <- CRPS(dist_best_fit, actual_methane_ts_sub)
+crps_AAN <- CRPS(dist_AAN, actual_methane_ts_sub)
+
+# Formatting and printing
+cat("Winkler Score (Best Fit):", winkler_best_fit, "\n")
+cat("Winkler Score (AAN):", winkler_AAN, "\n")
+cat("CRPS (Best Fit):", crps_best_fit, "\n")
+cat("CRPS (AAN):", crps_AAN, "\n")
+```
+
+
+> Discuss which model had the better forecast and whether the additive seasonal component was necessary
+- Winkler Score:
+  - The Winkler Score is an interval accuracy measure. A lower score suggests that the forecasted intervals more accurately capture the observed data points.
+- Best Fit Model: 610.5782
+- ETS(AAN) Model: 575.5331
+- The ETS(AAN) model has a lower Winkler score, indicating that its forecast intervals were closer to the observed data points than the best fit model.
+
+>
+- CRPS (Continuous Ranked Probability Score):
+CRPS is another measure to evaluate forecast accuracy, especially for probabilistic forecasts. A lower CRPS indicates a better model in terms of overall predictive performance.
+- Best Fit Model: 1.190412
+- ETS(AAN) Model: 17.44663
+- The Best Fit model has a significantly lower CRPS than the ETS(AAN) model, suggesting better overall predictive accuracy for the best fit model.
+- The ETS(AAN) model, which doesn't have an additive seasonal component, provides better interval estimates as per the Winkler Score.
+- However, when considering the overall predictive accuracy using CRPS, the Best Fit model (which may contain an additive seasonal component, based on the selection of the 'best fit') is superior.
+- It seems there is a trade-off between the interval accuracy and overall predictive performance of the two models. The ETS(AAN) model, without an additive seasonal component, captures the observed data points within its intervals more accurately. However, in terms of the overall distribution of predictions, the Best Fit model performs better.
+- Considering both metrics, it might be prudent to examine other aspects of the forecasting process, like the nature of the data, to make a final decision. If the data exhibits strong seasonality, then having an additive seasonal component could be beneficial. If not, the non-seasonal ETS(AAN) model seems to be a reasonable choice for interval predictions. However, if overall predictive distribution performance is a higher priority, the Best Fit model appears to be the better choice.
+
+
