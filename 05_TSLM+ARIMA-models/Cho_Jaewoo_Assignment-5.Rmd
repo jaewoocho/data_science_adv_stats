@@ -1,0 +1,332 @@
+---
+title: "Assignment 5"
+author: "Jaewoo Cho"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval = TRUE, warning = FALSE, message = FALSE, comment = NA, cache = TRUE)
+# Load packages
+library(fpp2) 
+library(fpp3) 
+#library(regclass)
+library(TSA)
+# Set seed for reproducibility
+set.seed(1234)
+```
+
+## Build and forecast `median_days` houses are on the market in the Nashville area
+
+### 1. Plot `median_days` and comment on any patterns in the time series
+
+```{r, eval = TRUE, echo = TRUE, warning = FALSE, comment = NA, fig.width = 6, fig.align = "center"}
+# Load data
+library(readr)
+nashville_housing <- read_csv("~/Desktop/DS Fall 2023/DS adv stats/data/nashville_housing.csv")
+
+# Convert date (provided for you)
+nashville_housing$date <- yearmonth(nashville_housing$date)
+
+# Convert to `tsibble` (provided for you)
+housing_ts <- nashville_housing %>% as_tsibble(index = date)
+
+# Plot `median_days`
+housing_ts %>% autoplot(median_days)
+# Create a time series plot for `median_days`
+ggplot(data = housing_ts, aes(x = date, y = median_days)) +
+  geom_line() +
+  labs(title = "Time Series Plot of Median Days on Market",
+       x = "Date",
+       y = "Median Days") +
+  theme_minimal()
+```
+
+> Answer: "Comment on any patterns in the time series"
+- The time series has a pattern that looks like a downward trend that has a decrease in median days as the dates of time passes.
+
+### 2. Fit `TSLM` on `housing_train` data with all predictors. Report significant predictors and interpret `Multiple R-squared`.
+
+```{r, eval = TRUE, echo = TRUE, warning = FALSE, comment = NA}
+# Set up training and testing indices
+train <- 1:which(as.character(housing_ts$date) == "2021 Jun")
+
+# Initialize training and testing data
+housing_train <- housing_ts[train,]
+housing_test <- housing_ts[-train,]
+
+# Fit TSLM with all predictors
+# Hint: use `colnames()` to see all variables
+
+#colnames(housing_ts)
+
+fit_tslm <- housing_train %>%
+  model(tslm = TSLM(
+    median_days ~ unemployment + housing + price_increased +
+      price_decreased + pending_listing + median_price))
+
+# Report fit
+report(fit_tslm)
+
+```
+
+> Answer: "Report significant predictors and interpret `Multiple R-squared`."
+The significant predictors are 
+- unemployment with a coefficient estimate of approximately -0.8188 and a p-value of 0.027987.
+- housing with a coefficient estimate of approximately 0.0078 and a very low p-value of 2.06e-05.
+- price_decreased with a coefficient estimate of approximately -0.0129 and a very low p-value of 0.000131.
+- pending_listing with a coefficient estimate of approximately 0.0045 and a p-value of 0.014356.
+- These variables are statistically significant predictors because their p-values are below the commonly used significance level of 0.05. They have a meaningful impact on the dependent variable median_days in the regression model.
+- The Multiple R-squared value, which is 0.6484 in the model, represents the proportion of the variance in the dependent variable (median_days) that is explained by the combination of all the predictor variables included in the model.  In other words, approximately 64.84% of the variability in median_days can be accounted for by the variables unemployment, housing, price_increased, price_decreased, pending_listing, and median_price.A higher Multiple R-squared value indicates that a larger portion of the variability in the dependent variable is explained by the independent variables. A Multiple R-squared of 0.6484 suggests that the model has a reasonably good fit, as it captures a substantial portion of the variation in median_days.
+
+### 3. Check multicolinearity using `lm` and `VIF` functions. Report which predictors have `VIF` > 10 and keep *only* one variable.
+
+```{r, eval = TRUE, echo = TRUE, warning = FALSE, comment = NA}
+# Fit model with `lm`
+# Multicolinearity?
+fit <- lm(median_days ~ unemployment + housing + price_increased + price_decreased + pending_listing + median_price, data = housing_train)
+
+# Check for multicolinearity using `VIF`
+# had to use car instead of regclass due to error
+#regclass::VIF(fit)
+car::vif(fit)
+# You may need to install the {regclass} package
+round(coefficients(fit), 5)[c("pending_listing", "median_price")]
+```
+
+> Answer: "Report which predictors have `VIF` > 10 and say which variable you are deciding to keep."
+Based on these VIF values, it appears that  housing, median_price, and price_decreased have VIF values greater than 10, indicating a high degree of multicollinearity with other predictor variables. High VIF values suggest that these variables are highly correlated with other predictors in the model.Based on the restuls, I am going to remove housing and median_price, but I am going to keep price_decreased as it really close to the VIF > 10.
+
+### 4. Re-fit `lm` and check for whether multicolinarity remains after keeping *only* one of the multicolinear variables. Are any `VIF` > 10?
+
+```{r, eval = TRUE, echo = TRUE, warning = FALSE, comment = NA}
+# Re-fit model with `lm`
+fit <- lm(median_days ~ unemployment + price_increased + price_decreased + pending_listing , data = housing_train)
+
+# Check for multicolinearity using `VIF`
+# had to use car instead of regclass due to error
+#regclass::VIF(fit)
+car::vif(fit)
+# You may need to install the {regclass} package
+round(coefficients(fit), 5)[c("pending_listing")]
+```
+
+> Answer: "Are any `VIF` > 10?"
+- There are no VIF > 10 as the results all have really low VIF values that are even lower compared to the previous code.
+
+
+### 5. Re-fit `TSLM` with significant predictors only
+
+```{r, eval = TRUE, echo = TRUE, warning = FALSE, comment = NA}
+# Re-fit `TSLM` with significant predictors only
+
+# Report fit
+fit_tslm_sig <- housing_train %>% 
+                model(tslm = TSLM(median_days ~ unemployment+ housing + price_decreased + pending_listing))
+# Report fit
+report(fit_tslm_sig)
+```
+
+### 6. Plot residuals and perform Ljung-Box test. Are the residuals significantly different from white noise?
+
+```{r}
+# plotting residuals
+gg_tsresiduals(fit_tslm_sig)
+# Report fit
+fit_tslm_sig %>% 
+  augment() %>% 
+  features(.innov, ljung_box, lag = 12, dof = 5)
+```
+
+
+> Answer: "Are the residuals significantly different from white noise?"
+Yes, the residuals are significantly different from white noise, as indicated by a very low p-value in the Ljung-Box test.
+- Ljung-Box Statistic (lb_stat): 40.75451
+  - lb_stat (Ljung-Box Statistic): This statistic measures the presence of autocorrelation in the residuals. A higher value suggests stronger evidence of autocorrelation.
+- p-value (lb_pvalue): 9.023594e-07 (a very small p-value)
+  - lb_pvalue (p-value): This is the associated p-value for the Ljung-Box test statistic. The p-value is very small (9.023594e-07), which indicates that the residuals are significantly different from white noise.
+
+
+### 7. Fit the same `TSLM` model but now with `ARIMA` (i.e., fit a dynamic regression model). Comment on whether any differencing was used.
+
+```{r, eval = TRUE, echo = TRUE, warning = FALSE, comment = NA}
+# Fit model with `ARIMA`
+# Set pandemic
+tslm_arima <- housing_train %>% 
+  model(dynamic = ARIMA(median_days ~ unemployment+ housing + price_decreased + pending_listing))
+# Report fit
+report(tslm_arima)
+```
+
+> Answer: "Comment on whether any differencing was used."
+The model is specified as "LM w/ ARIMA(0,0,0)(1,1,0)[12] errors." The ARIMA portion of the model is ARIMA(0,0,0)(1,1,0)[12], which includes a seasonal differencing of order 1 and a seasonal moving average term.This indicates that differencing was indeed used in the model, specifically seasonal differencing with a lag of 12 (indicating monthly data). The (1,1,0) part of the ARIMA model represents the seasonal differencing (D=1) and the seasonal order (S=12), respectively. This differencing helps make the time series stationary and remove any trend and seasonality before applying linear regression (LM) to the differenced series.
+
+
+### 8. Plot residuals from the dynamic regression model and perform Ljung-Box test. Are the residuals significantly different from white noise?
+
+```{r, eval = TRUE, echo = TRUE, warning = FALSE, comment = NA, fig.width = 6, fig.align = "center"}
+# Plot residuals
+# Residuals
+gg_tsresiduals(tslm_arima)
+
+# Perform Ljung-Box test
+# Set lag based on seasonal lag in from `ARIMA` fit
+# (remember to adjust dof = number of coefficients)
+# Ljung-Box
+tslm_arima %>% augment() %>% 
+  features(.innov, ljung_box, lag = 12, dof = 6)
+```
+
+> Answer: "Are the residuals significantly different from white noise?"
+Yes, the residuals are marginally different from white noise, as indicated by a p-value of 0.04934696 in the Ljung-Box test.
+Ljung-Box Statistic (lb_stat): 12.62754, p-value (lb_pvalue): 0.04934696
+The p-value is 0.04934696, which is less than the commonly used significance level of 0.05. This indicates that the residuals are marginally different from white noise at a 5% significance level.
+
+
+### 9. Fit an `ETS` model on `median_days` and report fit. Interpret the `alpha` and `gamma` parameters.
+
+```{r, eval = TRUE, echo = TRUE, warning = FALSE, comment = NA}
+# Fit model with `ETS`
+
+fit_ets <- housing_train %>% model(ETS(median_days))
+# Report fit
+report(fit_ets)
+
+```
+
+> Answer: "Interpret the `alpha` and `gamma` parameters."
+- Alpha represents the smoothing parameter for the level component of the time series. In the model, alpha is approximately 0.9063522. The level component represents the underlying or average value of the time series data. A higher alpha value gives more weight to recent observations when estimating the level, making it more responsive to recent changes in the data. A high alpha indicates that the model is giving significant weight to recent observations when forecasting the median_days series.
+- Gamma represents the smoothing parameter for the seasonal component of the time series. In the model, gamma is approximately 0.0001264875. The seasonal component captures regular, repeating patterns in the data, often related to seasonality or cycles. A small gamma value suggests that the seasonal component is not changing rapidly and is relatively stable over time. The seasonal component changes slowly, indicating that the seasonality of the median_days series is not highly volatile.
+
+
+### 10. Plot residuals from the `ETS` model and perform Ljung-Box test. Are the residuals significantly different from white noise?
+
+```{r, eval = TRUE, echo = TRUE, warning = FALSE, comment = NA, fig.width = 6, fig.align = "center"}
+fit <- housing_train %>% model(ANA = ETS(median_days ~ error("A") + trend("N") + season("A")))
+# Plot residuals
+gg_tsresiduals(fit_ets)
+
+# Perform Ljung-Box test
+# Set lag based on seasonal lag in from `ETS` fit
+# Set `dof = 12`
+fit_ets %>% augment() %>% 
+  features(.innov, ljung_box, lag = 12, dof = 12)
+```
+
+> Answer: "Are the residuals significantly different from white noise?"
+Yes, the residuals are significantly different from white noise, as indicated by a Ljung-Box test p-value of 0, suggesting the presence of autocorrelation in the residuals.The p-value associated with the Ljung-Box test statistic measures the significance of the test result.A small p-value (typically below a significance level, such as 0.05) suggests that there is significant autocorrelation in the residuals.The p-value is 0, which means the test has found strong evidence against the null hypothesis of no autocorrelation.
+
+### 11. Combine all models and forecast using `housing_test` data
+
+```{r, eval = TRUE, echo = TRUE, warning = FALSE, comment = NA}
+# Update test data with outlier and pandemic
+# Combine all models
+all_models <- housing_train %>% 
+  model(tslm = TSLM(
+    median_days ~ unemployment+ housing + price_decreased + pending_listing),
+    ets = ETS(median_days),
+    dynamic = ARIMA(
+    median_days ~ unemployment+ housing + price_decreased + pending_listing))
+
+# Forecast using `housing_test`
+fc <- all_models %>% forecast(new_data = housing_test)
+fc
+```
+
+### 12. Plot forecasts, compute point and distributional accuracy estimates. Which model would you use to forecast `median_days`?
+
+```{r, eval = TRUE, echo = TRUE, warning = FALSE, comment = NA, fig.width = 6, fig.align = "center"}
+# Plot forecasts
+autoplot(housing_train, median_days) +
+  autolayer(fc, .mean, series = "Forecast") +
+  autolayer(housing_test, 
+            median_days, 
+            series = "Test Data", 
+            colour = "orange") +
+  labs(title = "Median Days: Observations and Forecasts",
+       x = "Time", 
+       y = "Median Days") +
+  theme_minimal()
+
+autoplot(fc)
+
+# Compute point accuracy estimates
+fc %>% accuracy(housing_test) %>% 
+  select(.model, RMSE, ME, MAE)
+
+# Compute distributional accuracy estimates
+fc %>% accuracy(
+  housing_test,
+  list(crps = CRPS)
+)
+```
+
+
+> Answer: "Which model would you use to forecast `median_days`?"
+Among the models provided, the "dynamic" model has the lowest RMSE of approximately 1.351507. The "ets" model has an RMSE of approximately 2.721791, and the "tslm" model has the highest RMSE of approximately 4.897561. Lower RMSE values indicate better accuracy in point forecasting.Among the models, the "dynamic" model has the lowest CRPS of approximately 0.7969838. The "ets" model has a CRPS of approximately 1.7911959, and the "tslm" model has a CRPS of approximately 2.8073965. Lower CRPS values indicate better probabilistic forecasting performance.Based on both the RMSE and CRPS metrics, the "dynamic" model appears to be the best choice for forecasting median_days, as it has the lowest values for both metrics, indicating better accuracy and probabilistic forecasting performance.
+
+
+### 13. Load the `housing_validation.csv` file and plot the actual data over the `housing_train` and `housing_test` data. Use the color `"purple"` for the line
+
+### You'll need to combine the `housing_test` and `housing_validation` datasets (hint: first create `housing_validation` as a `tsibble`)
+
+```{r, eval = TRUE, echo = TRUE, warning = FALSE, comment = NA, fig.width = 6, fig.align = "center"}
+library(tsibble)
+# Load in the data
+housing_validation <- read_csv("~/Desktop/DS Fall 2023/DS adv stats/data/housing_validation.csv")
+
+
+# Set year and month for validation
+housing_validation$date <- yearmonth(housing_validation$date)
+
+# Create tsibble
+housing_valid_ts <- housing_validation %>% 
+  as_tsibble(index = date)
+
+# Create new tsibble (hint: you'll need to use `append_row` and populate the new rows)
+combined_ts <-bind_rows(housing_test, housing_valid_ts)
+
+# Forecast using the new combined `housing_test` and `housing_validation` data
+fc_combined <- all_models %>% forecast(new_data = combined_ts)
+
+# Plot forecasts
+autoplot(housing_train, median_days) +
+  autolayer(fc_combined, .mean, series = "Forecast") +
+  autolayer(combined_ts, 
+            median_days, 
+            series = "Test Data", 
+            colour = "black") + 
+  labs(title = "Median Days: Observations and Forecasts",
+       x = "Time", 
+       y = "Median Days") +
+  theme_minimal()
+
+
+# Compute point accuracy estimates
+fc_combined %>% accuracy(combined_ts) %>% 
+  select(.model, RMSE, ME, MAE)
+
+# Compute distributional accuracy estimates
+fc_combined %>% accuracy(
+  combined_ts,
+  list(crps = CRPS)
+)
+```
+
+### 14. Using *only* the `housing_validation` data (use your `tsibble`), check the accuracy of your forecasts
+
+```{r, eval = TRUE, echo = TRUE, warning = FALSE, comment = NA}
+# Compute point accuracy estimates
+fc_combined %>% 
+  accuracy(housing_valid_ts) %>% 
+  select(.model, RMSE, ME, MAE)
+
+# Compute distributional accuracy estimates
+fc_combined %>% accuracy(housing_valid_ts,list(crps = CRPS))
+```
+
+### 15. Based on the updated accuracies, does your choice of model change? Why or why not?
+
+> Answer
+Based on the updated accuracies, the choice of model will be the tslm model instead of the dynamic model.
+The "dynamic" model has the lowest RMSE of approximately 11.23714. The "tslm" model has an RMSE of approximately 13.14495, and the "ets" model has the highest RMSE of approximately 19.52407. Lower RMSE values indicate better accuracy in point forecasting.The "dynamic" model has the lowest CRPS of approximately 9.522384. The "tslm" model has a CRPS of approximately 8.687121, and the "ets" model has a CRPS of approximately 14.275650. Lower CRPS values indicate better probabilistic forecasting performance.Based on the updated accuracy metrics, the "dynamic" model is no longer the best choice. The "tslm" model has the lowest RMSE and the lowest CRPS, indicating that it performs better in terms of both point forecasting accuracy and probabilistic forecasting performance. Therefore, the "tslm" model would be the preferred choice for forecasting in this scenario.
+
