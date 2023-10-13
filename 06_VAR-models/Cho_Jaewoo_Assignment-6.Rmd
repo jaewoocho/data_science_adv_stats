@@ -1,0 +1,283 @@
+---
+title: "Assignment 6"
+author: "Jaewoo Cho"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval = TRUE, warning = FALSE, message = FALSE, comment = NA, cache = TRUE)
+# Load packages
+library(vars)
+library(urca)
+library(fpp2)
+library(fpp3)
+
+# Set seed for reproducibility
+set.seed(1234)
+```
+
+## Forecast `median_days` using `VAR` and `VECM` models
+
+### 1. Loading `nashville_housing` and `housing_validation` and format them into `tsibble`
+#### Set up a pandemic dummy variable between May 2020 and June 2021 in `nashville_housing` (add a pandemic dummy variable to your validation data too!)
+
+```{r, eval = TRUE, echo = FALSE, warning = FALSE, comment = NA, cache = TRUE, fig.width = 6}
+library(readr)
+nashville_housing <- read_csv("~/Desktop/DS Fall 2023/DS adv stats/data/nashville_housing.csv")
+nashville_housing$date <- yearmonth(nashville_housing$date)
+# Convert to `tsibble`
+housing_ts <- nashville_housing %>%
+  as_tsibble(index = date)
+# Outlier dummy variable
+housing_ts$outlier <- rep(0, nrow(housing_ts))
+# Set outlier to 1
+housing_ts$outlier[
+  which.min(difference(housing_ts$housing))
+] <- 1
+# Set pandemic
+housing_ts$pandemic <- rep(0, nrow(housing_ts))
+housing_ts$pandemic[
+  which(
+    as.character(housing_ts$date) == "2020 May"
+  ):which(
+    as.character(housing_ts$date) == "2021 Jun"
+  )
+] <- 1
+
+housing_validation <- read_csv("~/Desktop/DS Fall 2023/DS adv stats/data/housing_validation.csv")
+housing_validation$date <- yearmonth(housing_validation$date)
+# Convert to `tsibble`
+validation_ts <- housing_validation %>%
+  as_tsibble(index = date)
+# Add pandemic dummy variable
+validation_ts <- validation_ts %>%
+  mutate(pandemic = ifelse(date >= yearmonth("2020-05") & date <= yearmonth("2021-06"), 1, 0))
+
+# Outlier dummy variable
+validation_ts$outlier <- rep(0, nrow(validation_ts))
+# Set outlier to 1
+validation_ts$outlier[
+  which.min(difference(validation_ts$housing))
+] <- 1
+
+
+```
+
+### 2. Fit an \{fpp3\} `VAR` model to the `nashville_housing` data
+
+```{r, eval = TRUE, echo = TRUE, warning = FALSE, comment = NA}
+# Fit VAR model
+fit_var <- housing_ts %>%
+  model(
+    lag_2 = VAR(
+      vars(housing, unemployment, median_days,
+           price_decreased, pending_listing) ~
+        xreg(outlier, pandemic)
+    )
+  )
+## Make sure to include exogenous variables `outlier` and `pandemic`
+fit_var
+```
+
+### 3. Report fit of `VAR`model. How many lags were used?
+
+```{r, eval = TRUE, echo = TRUE, warning = FALSE, comment = NA}
+# Report fit
+report(fit_var)
+```
+
+
+> Answer: "How many lags were used?"
+As you can see there are 2 lags in the model shown by Model: VAR(2).
+
+### 4. Plot the autocorrelations of the residuals
+
+```{r, eval = TRUE, echo = TRUE, warning = FALSE, comment = NA, cache = TRUE, fig.width = 6}
+# Plot autocorrelations
+# Autocorrelation of residuals
+fit_var %>% augment() %>%
+  ACF(.innov) %>% autoplot()
+```
+
+### 5. Were any autocorrelations significant in 4.? Report which variables and at what lags. Be sure to report *all* variables *and* lags
+
+> Report significant autocorrelations. Report all variables and lags that are significant.
+Housing: Significant autocorrelations with its own first lag and the outlier.
+Unemployment: Significant autocorrelation with its own first lag.
+Median_days: Significant autocorrelations with its own first and second lags.
+Price_decreased: Significant autocorrelations with housing's first lag, its own first lag, and pending_listing's first lag.
+Pending_listing: Significant autocorrelations with unemployment's first lag, its own first lag, and the outlier.
+
+### 6. Fit a `VAR` model to the `nashville_housing` data using \{vars\}
+
+```{r, eval = TRUE, echo = TRUE, warning = FALSE, comment = NA, cache = TRUE, fig.width = 6}
+var2 <- vars::VAR(y = housing_ts[,c("housing", "unemployment", "median_days", "price_decreased", "pending_listing")], exogen = housing_ts[,c("outlier", "pandemic")],
+  type = "none", 
+  p = 2)
+dummy_matrix <- matrix(rep(0, 2 * 24), 
+                 nrow = 24,
+                 dimnames = list(NULL, c("outlier", "pandemic")))
+var_fc <- predict(var2, n.ahead = 24, dumvar = dummy_matrix)
+var_fc$fcst$housing
+```
+
+### 7. Perform the serial test on the residual autocorrelations. Interpret the *p*-value. What does this mean?
+
+```{r, eval = TRUE, echo = TRUE, warning = FALSE, comment = NA}
+# Perform serial test
+serial.test(var2, lags.pt = 10, type = "PT.adjusted")
+
+## Set 'lags.pt' to `4`
+## Set 'type' to "PT.adjusted"
+serial.test(var2, lags.pt = 4, type = "PT.adjusted")
+```
+
+> Answer: "Interpret the *p*-value. What does this mean?"
+The p-value means small p-value 7.068e-09 from the Portmanteau Test indicates that there's strong evidence against the residuals of the VAR model being white noise. This suggests that the model may not be a perfect fit for the data, as it leaves some temporal structure unaccounted for in its residuals.
+
+### 8. Forecast 13 time points ahead using the `VAR` model
+#### Don't forget to create a dummy variable matrix for the "pandemic" variable
+
+```{r, eval = TRUE, echo = TRUE, warning = FALSE, comment = NA, cache = TRUE, fig.width = 6}
+dummy_matrix_13 <- matrix(rep(0, 2 * 13),  nrow = 13, dimnames = list(NULL, c("outlier", "pandemic")))
+# Forecasting 13 points
+fcvar13 <- predict(var2, n.ahead = 13, dumvar = dummy_matrix_13)
+fcvar13$fcst$housing
+future_dates <- seq(from = as.Date("2023-01-01"), by = "month", length.out = 13) 
+fc_housing_13 <- fcvar13$fcst$housing
+# Creating a tsibble
+var_fc_tsbl <- data.frame(date = future_dates,
+  housing_mean = fc_housing_13[,"fcst"],
+  housing_sd = fc_housing_13[,"CI"]) %>%
+  as_tsibble(index = date)
+var_fc_tsbl
+```
+
+### 9. Format the `median_days` forecast to {fpp3} specifications
+#### Use `housing_validation`'s `date` variable
+
+```{r, eval = TRUE, echo = FALSE, warning = FALSE, comment = NA, cache = TRUE, fig.width = 6}
+# Forecast 24 points to generate the sequence of dates
+date_seq <- seq(ym(min(housing_validation$date)), length.out = 24, by = "months")
+# Extract the median_days 
+median_days_fc <- data.frame(date = date_seq,median_days = var_fc$fcst$median_days[, "fcst"])
+# Use `housing_validation`'s `date` variable
+median_days_fc <- left_join(median_days_fc, housing_validation, by = "date")
+median_days_fc
+```
+
+### 10. Plot the forecast against the validation data
+
+```{r, eval = TRUE, echo = FALSE, warning = FALSE, comment = NA, cache = TRUE, fig.width = 6}
+ggplot(data = median_days_fc, aes(x = date)) +
+  geom_line(aes(y = median_days.x, color = "Forecast"), size = 1) +
+  geom_line(aes(y = median_days.y, color = "Actual"), size = 1) +
+  labs(title = "Actual to Forecast Forecast days ", x = "Date", y = "Median Days", color = "Legend")
+```
+
+### 11. Does the `VAR` forecast seem accurate?
+```{r}
+# Accuracy measurements
+subset_data <- median_days_fc[median_days_fc$date >= "2022-07-01" & median_days_fc$date <= "2023-07-01", ]
+# Calculate the accuracy measures for the subset data
+ME <- mean(subset_data$median_days.x - subset_data$median_days.y, na.rm = TRUE)
+RMSE <- sqrt(mean((subset_data$median_days.x - subset_data$median_days.y)^2, na.rm = TRUE))
+MAE <- mean(abs(subset_data$median_days.x - subset_data$median_days.y), na.rm = TRUE)
+MPE <- mean((subset_data$median_days.x - subset_data$median_days.y) / subset_data$median_days.y, na.rm = TRUE) * 100
+MAPE <- mean(abs(subset_data$median_days.x - subset_data$median_days.y) / subset_data$median_days.y, na.rm = TRUE) * 100
+# Display the results
+cat(paste("Mean Error (ME):", round(ME, 2)), "\n")
+cat(paste("Root Mean Squared Error (RMSE):", round(RMSE, 2)), "\n")
+cat(paste("Mean Absolute Error (MAE):", round(MAE, 2)), "\n")
+cat(paste("Mean Percentage Error (MPE):", round(MPE, 2)), "\n")
+cat(paste("Mean Absolute Percentage Error (MAPE):", round(MAPE, 2)), "\n")
+```
+
+> Answer: "Does the `VAR` forecast seem accurate?"
+- The VAR forecast appears to systematically under-predicting with relatively high errors, suggesting it may not be highly accurate. Based on the given information:
+- Mean Error (ME) -10.5: A negative mean error suggests that, on average, the model's forecasts are under-predicting the actual values. The magnitude (10.5) indicates the size of the average under-prediction.
+- Root Mean Squared Error (RMSE) 11.88: This metric gives more weight to larger errors. An RMSE of 11.88 indicates the average magnitude of the errors. It is somewhat close to the MAE, which means that there might not be a lot of very large individual errors, but it's still slightly higher.
+- Mean Absolute Error (MAE) 10.5: This metric indicates the average absolute forecast error. In this case, it's equal to the ME, which suggests that the errors might be predominantly in one direction (under-prediction, as mentioned above).
+- Mean Percentage Error (MPE) -29.17%: The negative value again confirms that the model, on average, tends to under-predict. A value of -29.17% indicates a significant under-prediction, which can be concerning.
+- Mean Absolute Percentage Error (MAPE) 29.17%: This indicates that the forecast is off by an average of 29.17% from the actual values. Depending on the context, this might be deemed high. For many industries or applications, an MAPE of around 10% or less might be considered good. A value of almost 30% could indicate that the model is not very accurate.
+
+
+### 12. Perform co-integration
+
+```{r, eval = TRUE, echo = FALSE, warning = FALSE, comment = NA}
+# Cointegration
+co_test <- ca.jo(
+  x = housing_ts[,c(
+    "housing", "unemployment", "median_days",
+    "price_decreased", "pending_listing")],  
+  type = "trace", 
+  K = 2, # lag -- same as VAR model
+  spec = "longrun", 
+  ecdet = "trend", # trend-stationary
+  dumvar = housing_ts[,c("outlier", "pandemic")])
+```
+
+### 13. Print summary. What rank do you have evidence for? What is the test statistic? What critical value do you show evidence for at this rank?
+
+```{r, eval = TRUE, echo = FALSE, warning = FALSE, comment = NA}
+co_summ <- summary(co_test)
+co_summ
+```
+
+> Answer: "What rank do you have evidence for?"
+- We have evidence for r <_ 1  since the test statistic value (63.92) exceeds all the critical values at 10%, 5%, and 1% significance levels (59.14, 62.99, and 70.05). This means we have evidence to suggest that there is at least one cointegrating relationship among the variables.
+
+> Answer: "What is the test statistic (i.e., numerical value) of the rank you reported above?"
+- The test statistic value for the rank r <_ 1 is 63.92.
+
+> Answer: "What critical value do you show evidence for at this rank?"
+- The test statistic value of 63.92 evidence is shown up to the 5% critical value of 62.99, but not for the 1% critical value of 70.05.
+
+
+### 14. Convert `VECM` to `VAR` and forecast 13 months out (use code from 8.)
+
+```{r, eval = TRUE, echo = FALSE, warning = FALSE, comment = NA}
+# Convert VECM to VAR r = 1
+vecm_to_var <- vars::vec2var(co_test, r = 1)
+dummy_matrixrix13 <- matrix( rep(0, 2 * 13), nrow = 13)
+colnames(dummy_matrixrix13) <- c("outlier", "pandemic")
+# Forecast for 13 months
+vecm_fcvar13 <- predict(vecm_to_var, n.ahead = 13, dumvar = dummy_matrixrix13)
+# Forecasted values
+vecm_fcvar13$fcst$housing
+```
+
+### 15. Format the `median_days` forecast to {fpp3} specifications
+#### Use `housing_validation`'s `date` variable
+#### Use code from 9.
+
+```{r, eval = TRUE, echo = FALSE, warning = FALSE, comment = NA, cache = TRUE, fig.width = 6}
+# Forecast for data
+date_seq <- seq(ym(min(housing_validation$date)), length.out = 13, by = "months")
+# Extract VECM converted to VAR
+vecm_medianfc <- vecm_fcvar13$fcst$median_days[,"fcst"]
+# Format the forecast to {fpp3} 
+vecm_fcvar2 <- data.frame( date = date_seq,median_days = vecm_medianfc) %>% as_tsibble(index = date)
+```
+
+### 16. Plot the forecast against the validation data and `VAR` forecast
+
+```{r, eval = TRUE, echo = FALSE, warning = FALSE, comment = NA, cache = TRUE, fig.width = 6}
+# Plotting the forecast from VECM converted to VAR against the validation data
+ggplot() +geom_line(data = housing_validation, aes(x = date, y = median_days, color = "Actual Data"), size = 1.2, linetype = "solid") + geom_line(data = vecm_fcvar2, aes(x = date, y = median_days, color = "VECM to VAR Forecast"), size = 1.2, linetype = "dashed") +labs(title = "Actual vs. VECM/VAR Median day forecast",
+       y = "median_days",
+       x = "Date") +
+  scale_color_manual(values = c("Actual Data" = "blue", "VECM/VAR Forecast" = "red"),name = "Forecast Type") 
+```
+
+### 17. Based on the plotted forecasts, which forecast would you prefer? What does the VECM do differently than the VAR? Would you trust this model to forecast into the future?
+
+> Answer: "Based on the plotted forecasts, which forecast would you prefer? What does the VECM do differently than the VAR? Would you trust this model to forecast into the future?"
+- I would trust the VECM forecast as the forecast calculates a long term calculation based on the cointegration compared to the VAR. I would trust this model to forecast into the future as it incorporates a more intercorlated calculation.
+- Cointegration: VECM is specifically designed for time series that are non-stationary but cointegrated. Statistical tests (like the Johansen test) that the variables are cointegrated, then VECM is a natural choice, as it captures the long-run equilibrium relationship between such variables.
+
+
+
+
+
+
